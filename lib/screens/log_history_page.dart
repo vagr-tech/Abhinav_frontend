@@ -58,7 +58,7 @@ class _LogHistoryPageState extends State<LogHistoryPage> {
 // zoho_sales-ஐ visitId வச்சு map பண்ணு
     final Map<String, dynamic> zohoMap = {};
     for (var z in zohoSales) {
-      zohoMap[z["shopName"]] = z["sales"];
+      zohoMap[z["visitId"]] = z["sales"];
     }
 
     print("✅ RAW LOG COUNT => ${rawVisits.length}");
@@ -78,7 +78,7 @@ class _LogHistoryPageState extends State<LogHistoryPage> {
       }
 
       // zoho_sales match பண்ணு
-      final zoho = zohoMap[l["shop_name"]];
+      final zoho = zohoMap[l["visit_id"]];
 
       return {
         "pk": l["pk"],

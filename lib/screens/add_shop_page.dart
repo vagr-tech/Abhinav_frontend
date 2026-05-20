@@ -84,6 +84,7 @@ class _AddShopPageState extends State<AddShopPage> {
         addressController.text = data["address"] ?? "";
         primaryPhoneController.text = data["primaryPhone"] ?? "";
         secondaryPhoneController.text = data["secondaryPhone"] ?? "";
+        selectedSegment = data["segment"] ?? null; // ✅ add this
       });
 
       ScaffoldMessenger.of(context).showSnackBar(

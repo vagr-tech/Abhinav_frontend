@@ -165,8 +165,7 @@ class _ShopListPageState extends State<ShopListPage>
     await saveCallLog(shop["shop_id"], phone, duration);
   }
 
-  Future<void> saveCallLog(
-      String shopId, String phone, int duration) async {
+  Future<void> saveCallLog(String shopId, String phone, int duration) async {
     await http.post(
       Uri.parse(
           "https://abhinav-backend.onrender.com/api/shops/$shopId/add-call"),
@@ -366,17 +365,17 @@ class _ShopListPageState extends State<ShopListPage>
 
   // ── Shop Card ──────────────────────────────────────────
   Widget buildShopCard(Map<String, dynamic> shop) {
-    final double lat =
-        double.tryParse(shop["lat"]?.toString() ?? "0") ?? 0;
-    final double lng =
-        double.tryParse(shop["lng"]?.toString() ?? "0") ?? 0;
+    final double lat = double.tryParse(shop["lat"]?.toString() ?? "0") ?? 0;
+    final double lng = double.tryParse(shop["lng"]?.toString() ?? "0") ?? 0;
     final seg = (shop["segment"] ?? "").toString().toUpperCase();
     final String imageUrl = (shop["shopImage"] ?? "").toString();
     final bool imageEmpty = imageUrl.isEmpty;
 
     // ── Zoho match ──────────────────────────────────────
-    final shopName =
-        (shop["shop_name"] ?? shop["shopName"] ?? "").toString().toLowerCase().trim();
+    final shopName = (shop["shop_name"] ?? shop["shopName"] ?? "")
+        .toString()
+        .toLowerCase()
+        .trim();
     final zoho = zohoData[shopName];
 
     return Container(
@@ -431,8 +430,7 @@ class _ShopListPageState extends State<ShopListPage>
                           decoration: BoxDecoration(
                             color: Colors.green,
                             shape: BoxShape.circle,
-                            border:
-                                Border.all(color: Colors.white, width: 2),
+                            border: Border.all(color: Colors.white, width: 2),
                           ),
                           child: const Icon(Icons.add,
                               size: 14, color: Colors.white),
@@ -476,8 +474,7 @@ class _ShopListPageState extends State<ShopListPage>
                       padding: const EdgeInsets.symmetric(
                           horizontal: 8, vertical: 3),
                       decoration: BoxDecoration(
-                        color:
-                            const Color(0xFF005BBB).withOpacity(0.1),
+                        color: const Color(0xFF005BBB).withOpacity(0.1),
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: Text(
@@ -499,13 +496,11 @@ class _ShopListPageState extends State<ShopListPage>
 
           // ── Lat/Lng ────────────────────────────────────
           Container(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
             decoration: BoxDecoration(
               color: const Color(0xFFF4F7FC),
               borderRadius: BorderRadius.circular(16),
-              border:
-                  Border.all(color: Colors.blue.withOpacity(0.08)),
+              border: Border.all(color: Colors.blue.withOpacity(0.08)),
             ),
             child: Row(
               children: [
@@ -519,8 +514,7 @@ class _ShopListPageState extends State<ShopListPage>
                         fontSize: 12, fontWeight: FontWeight.w600),
                   ),
                 ),
-                Container(
-                    width: 1, height: 14, color: Colors.grey.shade300),
+                Container(width: 1, height: 14, color: Colors.grey.shade300),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
@@ -549,8 +543,7 @@ class _ShopListPageState extends State<ShopListPage>
                     label: const Text("Maps"),
                     style: OutlinedButton.styleFrom(
                       foregroundColor: const Color(0xFF005BBB),
-                      padding:
-                          const EdgeInsets.symmetric(vertical: 14),
+                      padding: const EdgeInsets.symmetric(vertical: 14),
                       shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(16)),
                     ),
@@ -560,14 +553,12 @@ class _ShopListPageState extends State<ShopListPage>
                 Expanded(
                   child: ElevatedButton.icon(
                     onPressed: () => makeCall(shop),
-                    icon: const Icon(Icons.call,
-                        size: 18, color: Colors.white),
+                    icon: const Icon(Icons.call, size: 18, color: Colors.white),
                     label: const Text("Call",
                         style: TextStyle(color: Colors.white)),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.orange,
-                      padding:
-                          const EdgeInsets.symmetric(vertical: 14),
+                      padding: const EdgeInsets.symmetric(vertical: 14),
                       shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(16)),
                     ),
@@ -590,8 +581,7 @@ class _ShopListPageState extends State<ShopListPage>
                         style: TextStyle(color: Colors.white)),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.green,
-                      padding:
-                          const EdgeInsets.symmetric(vertical: 14),
+                      padding: const EdgeInsets.symmetric(vertical: 14),
                       shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(16)),
                     ),
@@ -671,13 +661,11 @@ class _ShopListPageState extends State<ShopListPage>
                               "Are you sure you want to delete this shop?"),
                           actions: [
                             TextButton(
-                              onPressed: () =>
-                                  Navigator.pop(context, false),
+                              onPressed: () => Navigator.pop(context, false),
                               child: const Text("Cancel"),
                             ),
                             ElevatedButton(
-                              onPressed: () =>
-                                  Navigator.pop(context, true),
+                              onPressed: () => Navigator.pop(context, true),
                               style: ElevatedButton.styleFrom(
                                   backgroundColor: Colors.red),
                               child: const Text("Delete"),
@@ -690,8 +678,7 @@ class _ShopListPageState extends State<ShopListPage>
                         final id = shop["shop_id"]?.toString();
                         if (id == null || id.isEmpty) {
                           ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                                content: Text("Shop ID missing")),
+                            const SnackBar(content: Text("Shop ID missing")),
                           );
                           return;
                         }
@@ -730,8 +717,7 @@ class _ShopListPageState extends State<ShopListPage>
     if (zohoLoading && zohoData.isEmpty) {
       return Container(
         margin: const EdgeInsets.only(top: 10),
-        padding:
-            const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         decoration: BoxDecoration(
           color: const Color(0xFFF4F7FC),
           borderRadius: BorderRadius.circular(14),
@@ -746,8 +732,7 @@ class _ShopListPageState extends State<ShopListPage>
             ),
             SizedBox(width: 8),
             Text("Loading Zoho data...",
-                style:
-                    TextStyle(fontSize: 11, color: Colors.black45)),
+                style: TextStyle(fontSize: 11, color: Colors.black45)),
           ],
         ),
       );
@@ -757,43 +742,40 @@ class _ShopListPageState extends State<ShopListPage>
     if (zoho == null) {
       return Container(
         margin: const EdgeInsets.only(top: 10),
-        padding:
-            const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
         decoration: BoxDecoration(
           color: Colors.orange.withOpacity(0.07),
           borderRadius: BorderRadius.circular(14),
-          border:
-              Border.all(color: Colors.orange.withOpacity(0.2)),
+          border: Border.all(color: Colors.orange.withOpacity(0.2)),
         ),
         child: const Row(
           children: [
-            Icon(Icons.warning_amber_rounded,
-                size: 14, color: Colors.orange),
+            Icon(Icons.warning_amber_rounded, size: 14, color: Colors.orange),
             SizedBox(width: 6),
             Text("Not found in Zoho Books",
-                style:
-                    TextStyle(fontSize: 11, color: Colors.orange)),
+                style: TextStyle(fontSize: 11, color: Colors.orange)),
           ],
         ),
       );
     }
 
     // Matched — show data
-    final double outstanding =
-        (zoho["outstanding"] ?? 0).toDouble();
-    final double totalBilled =
-        (zoho["total_billed"] ?? 0).toDouble();
+    final double outstanding = (zoho["outstanding"] ?? 0).toDouble();
+    final double totalBilled = (zoho["total_billed"] ?? 0).toDouble();
     final int invoiceCount = (zoho["invoice_count"] ?? 0) as int;
 
     Color outColor = Colors.green;
-    if (outstanding > 100000) outColor = Colors.red;
-    else if (outstanding > 50000) outColor = Colors.orange;
-    else if (outstanding > 0) outColor = Colors.amber.shade700;
+    if (outstanding > 100000) {
+      outColor = Colors.red;
+    } else if (outstanding > 50000) {
+      outColor = Colors.orange;
+    } else if (outstanding > 0) {
+      outColor = Colors.amber.shade700;
+    }
 
     return Container(
       margin: const EdgeInsets.only(top: 10),
-      padding:
-          const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: BoxDecoration(
         color: const Color(0xFFF4F7FC),
         borderRadius: BorderRadius.circular(14),
@@ -815,13 +797,11 @@ class _ShopListPageState extends State<ShopListPage>
                 ),
                 const SizedBox(height: 2),
                 const Text("Total Billed",
-                    style: TextStyle(
-                        fontSize: 10, color: Colors.black45)),
+                    style: TextStyle(fontSize: 10, color: Colors.black45)),
               ],
             ),
           ),
-          Container(
-              width: 1, height: 30, color: Colors.grey.shade300),
+          Container(width: 1, height: 30, color: Colors.grey.shade300),
           // Outstanding
           Expanded(
             child: Column(
@@ -836,13 +816,11 @@ class _ShopListPageState extends State<ShopListPage>
                 ),
                 const SizedBox(height: 2),
                 const Text("Outstanding",
-                    style: TextStyle(
-                        fontSize: 10, color: Colors.black45)),
+                    style: TextStyle(fontSize: 10, color: Colors.black45)),
               ],
             ),
           ),
-          Container(
-              width: 1, height: 30, color: Colors.grey.shade300),
+          Container(width: 1, height: 30, color: Colors.grey.shade300),
           // Invoice Count
           Expanded(
             child: Column(
@@ -857,8 +835,7 @@ class _ShopListPageState extends State<ShopListPage>
                 ),
                 const SizedBox(height: 2),
                 const Text("Invoices",
-                    style: TextStyle(
-                        fontSize: 10, color: Colors.black45)),
+                    style: TextStyle(fontSize: 10, color: Colors.black45)),
               ],
             ),
           ),
