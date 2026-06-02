@@ -29,7 +29,7 @@ dependencies:
   flutter_background_service: ^5.1.0
   flutter_background_service_android: ^6.3.1
   flutter_map: ^6.1.0
-  latlong2: ^0.9.1
+  latlong2: ^0.9.0
 dev_dependencies:
   flutter_test:
     sdk: flutter

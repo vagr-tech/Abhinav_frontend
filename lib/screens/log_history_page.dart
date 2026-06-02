@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../services/api_service.dart';
 import 'full_network_image_page.dart';
+import 'map_route_page.dart';
+import 'dart:convert';
 
 class LogHistoryPage extends StatefulWidget {
   final Map<String, dynamic> user;
@@ -52,8 +54,17 @@ class _LogHistoryPageState extends State<LogHistoryPage> {
     // ******** GET FROM VisitLog API ******** //
     final rawResponse = await ApiService.getLogs(); // ← List இல்லாம Map வரும்
 
-    final List<dynamic> rawVisits = rawResponse["visits"] ?? [];
-    final List<dynamic> zohoSales = rawResponse["zoho_sales"] ?? [];
+    // Safely parse visits
+    final visitsRaw = rawResponse["visits"];
+    final List<dynamic> rawVisits = visitsRaw is String
+        ? jsonDecode(visitsRaw)
+        : (visitsRaw as List<dynamic>? ?? []);
+
+// Safely parse zoho_sales
+    final salesRaw = rawResponse["zoho_sales"];
+    final List<dynamic> zohoSales = salesRaw is String
+        ? jsonDecode(salesRaw)
+        : (salesRaw as List<dynamic>? ?? []);
 
 // zoho_sales-ஐ visitId வச்சு map பண்ணு
     final Map<String, dynamic> zohoMap = {};
@@ -91,6 +102,10 @@ class _LogHistoryPageState extends State<LogHistoryPage> {
         "photoUrl": l["photo_url"] ?? "",
         "result": isCall ? null : l["result"] == "match",
         "isCall": isCall,
+        "lat":
+            l["shopLat"] != null ? double.tryParse(l["lat"].toString()) : null,
+        "lng":
+            l["shopLng"] != null ? double.tryParse(l["lng"].toString()) : null,
         "distance": double.tryParse(l["distance"].toString()) ?? 0.0,
         "date": DateFormat("dd-MM-yyyy").format(dt),
         "time": DateFormat("hh:mm a").format(dt).toUpperCase(),
@@ -351,6 +366,24 @@ class _LogHistoryPageState extends State<LogHistoryPage> {
                         ),
                       ),
                       const Spacer(),
+
+                      // ✅ NEW — Map Route button
+                      IconButton(
+                        icon: const Icon(Icons.map_outlined,
+                            color: Colors.white, size: 26),
+                        tooltip: "Route Map",
+                        onPressed: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => MapRoutePage(
+                                user: widget.user,
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+
                       IconButton(
                         icon: const Icon(Icons.refresh,
                             color: Colors.white, size: 26),

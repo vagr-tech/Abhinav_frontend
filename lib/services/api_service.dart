@@ -332,7 +332,7 @@ class ApiService {
       String startDate, String endDate) async {
     try {
       final uri = Uri.https(
-        "abhinav-backend.onrender.com",
+        "abhinav-backend-z8tm.onrender.com",
         "/api/history/reports/dashboard",
         {"startDate": startDate, "endDate": endDate},
       );
@@ -430,8 +430,8 @@ class ApiService {
       String startDate, String endDate) async {
     try {
       final uri = Uri.https(
-        "abhinav-backend.onrender.com",
-        "/api/history/reports/attendance",
+        "abhinav-backend-z8tm.onrender.com",
+        "/api/attendance/report",
         {
           "startDate": startDate,
           "endDate": endDate,
@@ -448,7 +448,7 @@ class ApiService {
       if (response.statusCode != 200) return null;
 
       final data = jsonDecode(response.body);
-      return data["success"] == true ? data : null;
+      return data["ok"] == true ? data : null;
     } catch (e) {
       print("❌ ATTENDANCE REPORT ERROR => $e");
       return null;
