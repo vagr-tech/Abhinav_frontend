@@ -1,6 +1,13 @@
+// attendance_bottom_sheet.dart
+// Changes:
+//   1. Check-in success  → LiveLocationService.instance.start()
+//   2. Check-out success → LiveLocationService.instance.stop()
+//   3. locationType shown in success message ("Office" / "Shop")
+
 import 'package:flutter/material.dart';
 import '../services/attendance_service.dart';
 import '../services/location.dart';
+import '../services/live_location_service.dart'; // ← NEW
 
 class AttendanceBottomSheet extends StatefulWidget {
   final Map<String, dynamic> user;
@@ -30,17 +37,27 @@ class _AttendanceBottomSheetState extends State<AttendanceBottomSheet> {
         _showMsg("Please turn ON Location.");
         return;
       }
+
       final res = await AttendanceService().checkIn(
         lat: pos.latitude,
         lng: pos.longitude,
       );
+
       if (!mounted) return;
+
       if (res["ok"] == true) {
-        _showMsg("Checked In Successfully!");
+        // ✅ Live tracking start
+        final role = (widget.user["role"] ?? "").toString().toLowerCase();
+        if (role == "salesman") {
+          await LiveLocationService.instance.start();
+        }
+
+        final locType = res["locationType"] == "shop" ? "Shop" : "Office";
+        _showMsg("Checked In at ${res["locationName"]} ($locType) ✅");
       } else if (res["error"] == "already_checked_in") {
         _showMsg("You have already checked in today.");
       } else if (res["error"] == "outside_all_locations") {
-        _showMsg("You are not in an allowed office location.");
+        _showMsg("You are not near any office or shop location.");
       } else {
         _showMsg("Check-In Failed.");
       }
@@ -61,21 +78,29 @@ class _AttendanceBottomSheetState extends State<AttendanceBottomSheet> {
         _showMsg("Please turn ON Location & allow permission.");
         return;
       }
+
       final res = await AttendanceService().checkOut(
         lat: pos.latitude,
         lng: pos.longitude,
       );
+
       if (!mounted) return;
+
       if (res["ok"] == true) {
-        _showMsg("Checked Out Successfully!");
+        // ✅ Live tracking stop
+        final role = (widget.user["role"] ?? "").toString().toLowerCase();
+        if (role == "salesman") {
+          await LiveLocationService.instance.stop();
+        }
+
+        final locType = res["locationType"] == "shop" ? "Shop" : "Office";
+        _showMsg("Checked Out at ${res["locationName"]} ($locType) ✅");
       } else if (res["error"] == "no_checkin_found") {
         _showMsg("You have not checked in today.");
       } else if (res["error"] == "already_checked_out") {
         _showMsg("You have already checked out today.");
-      } else if (res["error"] == "checkout_window_closed") {
-        _showMsg("Checkout time exceeded. Contact admin.");
       } else if (res["error"] == "outside_all_locations") {
-        _showMsg("You are not in an allowed office location.");
+        _showMsg("You are not near any office or shop location.");
       } else {
         _showMsg("Check-Out Failed. Try again.");
       }

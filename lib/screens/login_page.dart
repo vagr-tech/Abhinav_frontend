@@ -7,7 +7,7 @@ import 'home_page.dart';
 import 'register_page.dart';
 import '../services/call_log_service.dart';
 import '../services/api_service.dart';
-import '../services/live_location_service.dart';
+// import '../services/live_location_service.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -77,10 +77,10 @@ class _LoginPageState extends State<LoginPage>
     CallLogService.start(shops);
 
     // 🔹 start live location (salesman only)   ← ADD THIS
-    final user = AuthService.currentUser ?? result["user"];
-    if ((user["role"] ?? "").toString().toLowerCase() == "salesman") {
-      LiveLocationService.instance.start();
-    }
+    // final user = AuthService.currentUser ?? result["user"];
+    // if ((user["role"] ?? "").toString().toLowerCase() == "salesman") {
+    //   LiveLocationService.instance.start();
+    // }
 
     // 🔥 IMPORTANT FIX (TOKEN SYNC)
     await Future.delayed(const Duration(milliseconds: 300));
