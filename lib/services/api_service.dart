@@ -454,4 +454,53 @@ class ApiService {
       return null;
     }
   }
-} // ← ApiService class ends
+
+// api_service.dart — ADD THESE METHODS to your existing ApiService class
+//
+// These 3 methods use your existing _baseUrl, _headers pattern.
+// Just paste inside your ApiService class.
+
+// ── POST /live-location (called by LiveLocationService every 1 min) ──
+  static Future<void> postLiveLocation({
+    required double lat,
+    required double lng,
+  }) async {
+    try {
+      await http
+          .post(
+            Uri.parse("$baseUrl/live-location"),
+            headers: headers,
+            body: jsonEncode({"lat": lat, "lng": lng}),
+          )
+          .timeout(const Duration(seconds: 10));
+    } catch (e) {
+      print("📍 postLiveLocation error: $e");
+      // Silent fail — LiveLocationService retries next minute
+    }
+  }
+
+// ── GET /live-location (called by MapRoutePage every 1 min) ──
+  static Future<Map<String, dynamic>> getLiveLocations() async {
+    final resp = await http
+        .get(
+          Uri.parse("$baseUrl/live-location"),
+          headers: headers,
+        )
+        .timeout(const Duration(seconds: 10));
+    return jsonDecode(resp.body) as Map<String, dynamic>;
+  }
+
+// ── DELETE /live-location (called on logout) ──
+  static Future<void> clearLiveLocation() async {
+    try {
+      await http
+          .delete(
+            Uri.parse("$baseUrl/live-location"),
+            headers: headers,
+          )
+          .timeout(const Duration(seconds: 10));
+    } catch (e) {
+      print("📍 clearLiveLocation error: $e");
+    }
+  }
+}

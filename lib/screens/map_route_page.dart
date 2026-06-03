@@ -1,5 +1,6 @@
 // ignore_for_file: deprecated_member_use
 
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
@@ -7,6 +8,34 @@ import 'package:intl/intl.dart';
 import '../services/api_service.dart';
 import '../models/user_model.dart';
 import '../services/user_service.dart';
+
+// ── Live location model ────────────────────────────────────
+class _LiveLocation {
+  final String salesmanName;
+  final double lat;
+  final double lng;
+  final int updatedAt; // epoch seconds
+
+  const _LiveLocation({
+    required this.salesmanName,
+    required this.lat,
+    required this.lng,
+    required this.updatedAt,
+  });
+
+  factory _LiveLocation.fromJson(Map<String, dynamic> j) => _LiveLocation(
+        salesmanName: j['salesmanName'] ?? '',
+        lat: (j['lat'] as num).toDouble(),
+        lng: (j['lng'] as num).toDouble(),
+        updatedAt: (j['updatedAt'] as num).toInt(),
+      );
+
+  /// How many minutes ago was this updated
+  int get minutesAgo =>
+      ((DateTime.now().millisecondsSinceEpoch ~/ 1000) - updatedAt) ~/ 60;
+
+  bool get isStale => minutesAgo > 5; // grey out if > 5 mins old
+}
 
 class MapRoutePage extends StatefulWidget {
   final Map<String, dynamic> user;
@@ -29,24 +58,66 @@ class _MapRoutePageState extends State<MapRoutePage> {
   String? selectedSalesman;
   final dateOptions = ["Today", "Yesterday", "Last 7 Days"];
 
-  // ── Data ──
-  List<dynamic> allLogs = []; // ALL visits from API (no filter)
-  List<String> salesmanList = []; // unique salesman names
-  List<dynamic> filteredLogs = []; // after date+salesman filter
+  // ── Matched-visit data (existing) ──
+  List<dynamic> allLogs = [];
+  List<String> salesmanList = [];
+  List<dynamic> filteredLogs = [];
   List<LatLng> routePoints = [];
   int? selectedIndex;
+
+  // ── Live location data (NEW) ──
+  // Map: salesmanName → _LiveLocation
+  Map<String, _LiveLocation> _liveLocations = {};
+  Timer? _liveRefreshTimer;
+  bool _showLive = true; // toggle live dots on/off
 
   @override
   void initState() {
     super.initState();
     _mapController = MapController();
     _fetchAndBuild();
+    _startLiveRefresh(); // NEW: start live polling
+  }
+
+  @override
+  void dispose() {
+    _liveRefreshTimer?.cancel();
+    super.dispose();
+  }
+
+  // ──────────────────────────────────────────────────────────
+  // LIVE: Poll backend every 1 minute for current positions
+  // ──────────────────────────────────────────────────────────
+  void _startLiveRefresh() {
+    _fetchLiveLocations(); // fetch immediately
+    _liveRefreshTimer = Timer.periodic(
+      const Duration(minutes: 1),
+      (_) => _fetchLiveLocations(),
+    );
+  }
+
+  Future<void> _fetchLiveLocations() async {
+    try {
+      final response = await ApiService.getLiveLocations();
+      final List<dynamic> rawList = response['locations'] ?? [];
+      final Map<String, _LiveLocation> updated = {};
+      for (final item in rawList) {
+        final loc = _LiveLocation.fromJson(item as Map<String, dynamic>);
+        updated[loc.salesmanName] = loc;
+      }
+
+      if (mounted) {
+        setState(() => _liveLocations = updated);
+        debugPrint('📍 Live: fetched ${updated.length} salesmen positions');
+      }
+    } catch (e) {
+      debugPrint('📍 Live fetch error: $e');
+      // Silent fail — will retry next minute
+    }
   }
 
   // ──────────────────────────────────────────────
-  // Step 1: Fetch logs + salesman list in parallel
-  // Salesman list comes from UserService (reliable)
-  // Logs come from ApiService (for route drawing)
+  // Existing: Fetch matched visits + salesman list
   // ──────────────────────────────────────────────
   Future<void> _fetchAndBuild() async {
     setState(() => loading = true);
@@ -55,7 +126,6 @@ class _MapRoutePageState extends State<MapRoutePage> {
     final userName = widget.user["name"].toString();
     final userSegment = widget.user["segment"].toString().toUpperCase();
 
-    // ── Fetch BOTH in parallel ──
     final results = await Future.wait([
       ApiService.getLogs(),
       UserService().getUsers(),
@@ -65,10 +135,6 @@ class _MapRoutePageState extends State<MapRoutePage> {
     final List<UserModel> allUsersList = results[1] as List<UserModel>;
     final List<dynamic> rawVisits = rawResponse["visits"] ?? [];
 
-    debugPrint("🗺 MAP: total raw visits  => \${rawVisits.length}");
-    debugPrint("🗺 MAP: total users fetched => ${allUsersList.length}");
-
-    // ── Map visits to app format ──
     List<dynamic> mapped = rawVisits.map((l) {
       DateTime dt;
       try {
@@ -95,7 +161,6 @@ class _MapRoutePageState extends State<MapRoutePage> {
       };
     }).toList();
 
-    // Role-based log filter
     if (role == "salesman") {
       mapped = mapped
           .where((l) => l["salesman"]
@@ -110,8 +175,6 @@ class _MapRoutePageState extends State<MapRoutePage> {
     }
 
     allLogs = mapped;
-
-    // ── Build salesman dropdown from UserService data ──
     _buildSalesmanList(allUsersList);
   }
 
@@ -120,20 +183,14 @@ class _MapRoutePageState extends State<MapRoutePage> {
     return double.tryParse(val.toString());
   }
 
-  // ──────────────────────────────────────────────
-  // Step 2: Build salesman list from UserService
-  // ✅ Independent of logs / coordinates
-  // ──────────────────────────────────────────────
   void _buildSalesmanList(List<UserModel> allUsersList) {
     final role = widget.user["role"].toString().toLowerCase();
     final userSegment = widget.user["segment"].toString().toUpperCase();
 
     if (role == "salesman") {
-      // Salesman: locked to own name — no dropdown
       selectedSalesman = widget.user["name"].toString();
       salesmanList = [];
     } else if (role == "manager") {
-      // Manager: only salesmen in their segment
       final names = allUsersList
           .where((u) =>
               u.role.toLowerCase() == "salesman" &&
@@ -146,7 +203,6 @@ class _MapRoutePageState extends State<MapRoutePage> {
       salesmanList = names;
       selectedSalesman = names.isNotEmpty ? names.first : null;
     } else {
-      // Master: all salesmen from all segments
       final names = allUsersList
           .where((u) => u.role.toLowerCase() == "salesman")
           .map((u) => u.name.trim())
@@ -158,17 +214,9 @@ class _MapRoutePageState extends State<MapRoutePage> {
       selectedSalesman = names.isNotEmpty ? names.first : null;
     }
 
-    debugPrint("🗺 MAP salesmanList => $salesmanList");
-    debugPrint("🗺 MAP selectedSalesman => $selectedSalesman");
-
-    // Step 3: apply date + salesman filter
     _applyFilters();
   }
 
-  // ──────────────────────────────────────────────
-  // Step 3: Filter by date + salesman for map
-  // Coordinates checked ONLY here
-  // ──────────────────────────────────────────────
   void _applyFilters() {
     if (selectedSalesman == null) {
       setState(() {
@@ -190,7 +238,6 @@ class _MapRoutePageState extends State<MapRoutePage> {
       return isMatch && hasCoords && dateMatch && nameMatch;
     }).toList();
 
-    // Sort by date+time ascending
     result.sort((a, b) {
       try {
         final da =
@@ -217,9 +264,6 @@ class _MapRoutePageState extends State<MapRoutePage> {
       loading = false;
     });
 
-    debugPrint(
-        "🗺 MAP: filteredLogs for $selectedSalesman => ${result.length}");
-
     WidgetsBinding.instance.addPostFrameCallback((_) => _fitBounds());
   }
 
@@ -236,15 +280,20 @@ class _MapRoutePageState extends State<MapRoutePage> {
     }
   }
 
-  // ──────────────────────────────────────────────
   void _fitBounds() {
-    if (routePoints.isEmpty) return;
-    if (routePoints.length == 1) {
-      _mapController.move(routePoints.first, 15);
+    // Collect all points: route + live locations
+    final allPoints = [
+      ...routePoints,
+      if (_showLive) ..._liveLocations.values.map((l) => LatLng(l.lat, l.lng)),
+    ];
+
+    if (allPoints.isEmpty) return;
+    if (allPoints.length == 1) {
+      _mapController.move(allPoints.first, 15);
       return;
     }
-    final lats = routePoints.map((p) => p.latitude);
-    final lngs = routePoints.map((p) => p.longitude);
+    final lats = allPoints.map((p) => p.latitude);
+    final lngs = allPoints.map((p) => p.longitude);
     _mapController.fitCamera(CameraFit.bounds(
       bounds: LatLngBounds(
         LatLng(lats.reduce((a, b) => a < b ? a : b) - 0.005,
@@ -257,7 +306,69 @@ class _MapRoutePageState extends State<MapRoutePage> {
   }
 
   // ──────────────────────────────────────────────
-  // Markers
+  // LIVE: Build live location markers
+  // ──────────────────────────────────────────────
+  List<Marker> _buildLiveMarkers() {
+    if (!_showLive) return [];
+
+    final role = widget.user['role'].toString().toLowerCase();
+    // For salesman role: only show their own dot
+    // For manager/master: show all live salesmen
+    final liveToShow = role == 'salesman'
+        ? _liveLocations.values
+            .where((l) =>
+                l.salesmanName.toLowerCase() ==
+                widget.user['name'].toString().toLowerCase())
+            .toList()
+        : _liveLocations.values.toList();
+
+    return liveToShow.map((loc) {
+      final isStale = loc.isStale;
+      final dotColor =
+          isStale ? Colors.grey.shade500 : const Color(0xFF00C853); // green
+
+      return Marker(
+        point: LatLng(loc.lat, loc.lng),
+        width: 56,
+        height: 68,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Name tag above dot
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: isStale ? Colors.grey.shade700 : const Color(0xFF003300),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                loc.salesmanName.split(' ').first, // first name only
+                style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 9,
+                    fontWeight: FontWeight.bold),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            const SizedBox(height: 2),
+            // Animated pulsing dot
+            _PulsingDot(color: dotColor, stale: isStale),
+            // "x min ago" label
+            Text(
+              isStale ? '${loc.minutesAgo}m ago' : 'Live',
+              style: TextStyle(
+                  fontSize: 8,
+                  color: isStale ? Colors.grey : const Color(0xFF00C853),
+                  fontWeight: FontWeight.bold),
+            ),
+          ],
+        ),
+      );
+    }).toList();
+  }
+
+  // ──────────────────────────────────────────────
+  // Existing: Matched-visit markers
   // ──────────────────────────────────────────────
   List<Marker> _buildMarkers() {
     return List.generate(filteredLogs.length, (i) {
@@ -304,7 +415,7 @@ class _MapRoutePageState extends State<MapRoutePage> {
   }
 
   // ──────────────────────────────────────────────
-  // Filter bar
+  // Filter bar (unchanged + live toggle)
   // ──────────────────────────────────────────────
   Widget _buildFilterBar() {
     final isSalesman =
@@ -327,41 +438,74 @@ class _MapRoutePageState extends State<MapRoutePage> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Date chips
+          // Date chips + Live toggle in same row
           Row(
-            children: dateOptions.map((opt) {
-              final active = selectedDateFilter == opt;
-              return Padding(
-                padding: const EdgeInsets.only(right: 8),
-                child: GestureDetector(
-                  onTap: () {
-                    setState(() => selectedDateFilter = opt);
-                    _applyFilters();
-                  },
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 160),
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
-                    decoration: BoxDecoration(
-                      color: active
-                          ? const Color(0xFF002D62)
-                          : const Color(0xFFE3ECF7),
-                      borderRadius: BorderRadius.circular(20),
+            children: [
+              ...dateOptions.map((opt) {
+                final active = selectedDateFilter == opt;
+                return Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: GestureDetector(
+                    onTap: () {
+                      setState(() => selectedDateFilter = opt);
+                      _applyFilters();
+                    },
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 160),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 7),
+                      decoration: BoxDecoration(
+                        color: active
+                            ? const Color(0xFF002D62)
+                            : const Color(0xFFE3ECF7),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Text(opt,
+                          style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: active
+                                  ? Colors.white
+                                  : const Color(0xFF002D62))),
                     ),
-                    child: Text(opt,
-                        style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            color: active
-                                ? Colors.white
-                                : const Color(0xFF002D62))),
                   ),
+                );
+              }),
+              const Spacer(),
+              // ── Live toggle (NEW) ──
+              GestureDetector(
+                onTap: () => setState(() => _showLive = !_showLive),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 160),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: _showLive
+                        ? const Color(0xFF00C853)
+                        : const Color(0xFFE0E0E0),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    Icon(
+                      Icons.radio_button_checked,
+                      size: 12,
+                      color: _showLive ? Colors.white : Colors.grey.shade600,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      'Live',
+                      style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          color:
+                              _showLive ? Colors.white : Colors.grey.shade600),
+                    ),
+                  ]),
                 ),
-              );
-            }).toList(),
+              ),
+            ],
           ),
 
-          // Salesman dropdown — master & manager only
           if (!isSalesman && salesmanList.isNotEmpty) ...[
             const SizedBox(height: 10),
             Container(
@@ -388,6 +532,19 @@ class _MapRoutePageState extends State<MapRoutePage> {
                                 size: 16, color: Color(0xFF005BBB)),
                             const SizedBox(width: 8),
                             Text(name),
+                            const Spacer(),
+                            // Live status indicator next to name
+                            if (_liveLocations.containsKey(name))
+                              Container(
+                                width: 8,
+                                height: 8,
+                                decoration: BoxDecoration(
+                                  color: _liveLocations[name]!.isStale
+                                      ? Colors.grey
+                                      : const Color(0xFF00C853),
+                                  shape: BoxShape.circle,
+                                ),
+                              ),
                           ]),
                         ))
                     .toList(),
@@ -399,7 +556,6 @@ class _MapRoutePageState extends State<MapRoutePage> {
             ),
           ],
 
-          // Salesman role: show locked name as chip
           if (isSalesman) ...[
             const SizedBox(height: 10),
             Container(
@@ -427,10 +583,8 @@ class _MapRoutePageState extends State<MapRoutePage> {
     );
   }
 
-  // ──────────────────────────────────────────────
-  // Summary strip
-  // ──────────────────────────────────────────────
   Widget _buildSummaryStrip() {
+    final liveCount = _showLive ? _liveLocations.length : 0;
     return Container(
       margin: const EdgeInsets.fromLTRB(12, 6, 12, 0),
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
@@ -443,12 +597,13 @@ class _MapRoutePageState extends State<MapRoutePage> {
         const SizedBox(width: 8),
         Expanded(
           child: Text(
-            "${filteredLogs.length} matched visit${filteredLogs.length != 1 ? 's' : ''}  •  $selectedDateFilter",
+            "${filteredLogs.length} visit${filteredLogs.length != 1 ? 's' : ''}  •  $selectedDateFilter"
+            "${liveCount > 0 ? '  •  $liveCount online' : ''}",
             style: const TextStyle(
                 color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600),
           ),
         ),
-        if (routePoints.isNotEmpty)
+        if (routePoints.isNotEmpty || _liveLocations.isNotEmpty)
           GestureDetector(
             onTap: _fitBounds,
             child: Container(
@@ -472,9 +627,6 @@ class _MapRoutePageState extends State<MapRoutePage> {
     );
   }
 
-  // ──────────────────────────────────────────────
-  // Bottom info card
-  // ──────────────────────────────────────────────
   Widget _buildInfoCard() {
     if (selectedIndex == null) return const SizedBox.shrink();
     final log = filteredLogs[selectedIndex!];
@@ -578,22 +730,23 @@ class _MapRoutePageState extends State<MapRoutePage> {
         ],
       );
 
-  // ──────────────────────────────────────────────
-  // BUILD
-  // ──────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: loading
           ? const Center(child: CircularProgressIndicator())
           : Stack(children: [
-              // MAP
               FlutterMap(
                 mapController: _mapController,
                 options: MapOptions(
                   initialCenter: routePoints.isNotEmpty
                       ? routePoints.first
-                      : const LatLng(11.1271, 78.6569),
+                      : _liveLocations.isNotEmpty
+                          ? LatLng(
+                              _liveLocations.values.first.lat,
+                              _liveLocations.values.first.lng,
+                            )
+                          : const LatLng(11.1271, 78.6569),
                   initialZoom: 13,
                   onTap: (_, __) => setState(() => selectedIndex = null),
                 ),
@@ -603,6 +756,7 @@ class _MapRoutePageState extends State<MapRoutePage> {
                         "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
                     userAgentPackageName: "com.yourapp.salestracker",
                   ),
+                  // Matched visits polyline
                   if (routePoints.length > 1)
                     PolylineLayer(polylines: [
                       Polyline(
@@ -610,11 +764,15 @@ class _MapRoutePageState extends State<MapRoutePage> {
                           strokeWidth: 3.5,
                           color: const Color(0xFF005BBB)),
                     ]),
-                  MarkerLayer(markers: _buildMarkers()),
+                  // All markers: visits + live (live on top)
+                  MarkerLayer(
+                    markers: [
+                      ..._buildMarkers(),
+                      ..._buildLiveMarkers(), // live dots on top
+                    ],
+                  ),
                 ],
               ),
-
-              // TOP OVERLAYS
               SafeArea(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -674,8 +832,6 @@ class _MapRoutePageState extends State<MapRoutePage> {
                   ],
                 ),
               ),
-
-              // Legend
               if (selectedIndex == null && filteredLogs.length > 1)
                 Positioned(
                   right: 14,
@@ -689,15 +845,13 @@ class _MapRoutePageState extends State<MapRoutePage> {
                       _legendDot(Colors.red.shade600, "End"),
                       const SizedBox(height: 6),
                       _legendDot(const Color(0xFF005BBB), "Visit"),
+                      const SizedBox(height: 6),
+                      _legendDot(const Color(0xFF00C853), "Live"), // NEW
                     ],
                   ),
                 ),
-
-              // Info card
               _buildInfoCard(),
-
-              // Empty state
-              if (filteredLogs.isEmpty)
+              if (filteredLogs.isEmpty && _liveLocations.isEmpty)
                 Center(
                   child: IgnorePointer(
                     child: Container(
@@ -727,6 +881,68 @@ class _MapRoutePageState extends State<MapRoutePage> {
                   ),
                 ),
             ]),
+    );
+  }
+}
+
+// ──────────────────────────────────────────────────────────
+// Pulsing green dot widget for live markers
+// ──────────────────────────────────────────────────────────
+class _PulsingDot extends StatefulWidget {
+  final Color color;
+  final bool stale;
+  const _PulsingDot({required this.color, required this.stale});
+
+  @override
+  State<_PulsingDot> createState() => _PulsingDotState();
+}
+
+class _PulsingDotState extends State<_PulsingDot>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _ctrl;
+  late Animation<double> _anim;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 1),
+    );
+    _anim = Tween<double>(begin: 0.85, end: 1.15).animate(
+      CurvedAnimation(parent: _ctrl, curve: Curves.easeInOut),
+    );
+    if (!widget.stale) {
+      _ctrl.repeat(reverse: true);
+    }
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ScaleTransition(
+      scale: _anim,
+      child: Container(
+        width: 18,
+        height: 18,
+        decoration: BoxDecoration(
+          color: widget.color,
+          shape: BoxShape.circle,
+          border: Border.all(color: Colors.white, width: 2.5),
+          boxShadow: [
+            BoxShadow(
+              color: widget.color.withOpacity(0.5),
+              blurRadius: 8,
+              spreadRadius: 2,
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
