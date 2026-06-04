@@ -1,5 +1,3 @@
-// ignore_for_file: unused_import
-
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -8,10 +6,12 @@ import 'dart:ui';
 import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:flutter_background_service_android/flutter_background_service_android.dart';
 import 'package:flutter/widgets.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'call_log_service.dart';
 import 'auth_service.dart';
+import 'api_service.dart';
 
 Future<void> initializeBackgroundService() async {
   if (!Platform.isAndroid && !Platform.isIOS) return;
@@ -46,7 +46,8 @@ void onStart(ServiceInstance service) async {
     );
   }
 
-  Timer.periodic(const Duration(seconds: 20), (timer) async {
+  // 1 min — live location ping + call log check
+  Timer.periodic(const Duration(minutes: 1), (timer) async {
     try {
       final prefs = await SharedPreferences.getInstance();
 
@@ -55,14 +56,41 @@ void onStart(ServiceInstance service) async {
 
       AuthService.token = token;
 
+      // ✅ Live location — salesman checkin ஆனா மட்டும் ping
+      final isTracking = prefs.getBool("live_tracking_active") ?? false;
+      if (isTracking) {
+        await _sendLocationFromBackground();
+      }
+
+      // ✅ Call log check — existing logic
       final raw = prefs.getString("shops_cache");
       if (raw == null || raw.isEmpty) return;
 
       final shops = jsonDecode(raw);
-
       await CallLogService.checkCallLogs(shops);
     } catch (e) {
       debugPrint("Background service error: $e");
     }
   });
+}
+
+Future<void> _sendLocationFromBackground() async {
+  try {
+    final Position pos = await Geolocator.getCurrentPosition(
+      desiredAccuracy: LocationAccuracy.high,
+      timeLimit: const Duration(seconds: 10),
+    );
+
+    await ApiService.postLiveLocation(
+      lat: pos.latitude,
+      lng: pos.longitude,
+    );
+
+    debugPrint(
+      '📍 BG Sent: (${pos.latitude.toStringAsFixed(5)}, '
+      '${pos.longitude.toStringAsFixed(5)}) ✅',
+    );
+  } catch (e) {
+    debugPrint('📍 BG location send error: $e — will retry next minute');
+  }
 }
