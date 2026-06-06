@@ -24,8 +24,10 @@ Future<void> initializeBackgroundService() async {
       autoStart: true,
       autoStartOnBoot: true,
       isForegroundMode: true,
-      initialNotificationTitle: 'Abhinav Tracking',
-      initialNotificationContent: 'Location tracking is running',
+      notificationChannelId:
+          'abhinav_tracking_channel', // ← FIXED: dedicated channel
+      initialNotificationTitle: 'Abhinav Tracking Active',
+      initialNotificationContent: '📍 Location tracking is running',
       foregroundServiceNotificationId: 999,
     ),
     iosConfiguration: IosConfiguration(),
@@ -40,45 +42,66 @@ void onStart(ServiceInstance service) async {
   DartPluginRegistrant.ensureInitialized();
 
   if (service is AndroidServiceInstance) {
+    // ← CRITICAL: setAsForegroundService() call பண்ணாட்டா notification போயிடும்
+    service.setAsForegroundService();
+
     service.setForegroundNotificationInfo(
-      title: "Abhinav Tracking",
-      content: "Location tracking is running",
+      title: "Abhinav Tracking Active",
+      content: "📍 Location tracking is running",
     );
   }
 
-  // 1 min — live location ping + call log check
+  // Service kill signal
+  service.on('stopService').listen((event) {
+    service.stopSelf();
+  });
+
+  // ← FIXED: 1 min timer
   Timer.periodic(const Duration(minutes: 1), (timer) async {
     try {
-      final prefs = await SharedPreferences.getInstance();
+      // Service alive-ஆ இருக்கா check
+      if (service is AndroidServiceInstance) {
+        if (!await service.isForegroundService()) {
+          service.setAsForegroundService(); // Re-assert foreground
+        }
+      }
 
+      final prefs = await SharedPreferences.getInstance();
       final token = prefs.getString("token");
       if (token == null || token.isEmpty) return;
 
       AuthService.token = token;
 
-      // ✅ Live location — salesman checkin ஆனா மட்டும் ping
+      // ─── Live location ping ───────────────────────────────────
       final isTracking = prefs.getBool("live_tracking_active") ?? false;
       if (isTracking) {
         await _sendLocationFromBackground();
       }
 
-      // ✅ Call log check — existing logic
+      // ─── Call log (existing logic) ────────────────────────────
       final raw = prefs.getString("shops_cache");
       if (raw == null || raw.isEmpty) return;
-
       final shops = jsonDecode(raw);
       await CallLogService.checkCallLogs(shops);
     } catch (e) {
-      debugPrint("Background service error: $e");
+      debugPrint("BG service error: $e");
     }
   });
 }
 
 Future<void> _sendLocationFromBackground() async {
   try {
+    // ← FIXED: Background permission check
+    LocationPermission perm = await Geolocator.checkPermission();
+    if (perm == LocationPermission.denied ||
+        perm == LocationPermission.deniedForever) {
+      debugPrint('📍 BG: No location permission — skipping');
+      return;
+    }
+
     final Position pos = await Geolocator.getCurrentPosition(
       desiredAccuracy: LocationAccuracy.high,
-      timeLimit: const Duration(seconds: 10),
+      timeLimit: const Duration(seconds: 15), // 10→15: BG-ல slow ஆ இருக்கும்
     );
 
     await ApiService.postLiveLocation(
@@ -86,11 +109,10 @@ Future<void> _sendLocationFromBackground() async {
       lng: pos.longitude,
     );
 
-    debugPrint(
-      '📍 BG Sent: (${pos.latitude.toStringAsFixed(5)}, '
-      '${pos.longitude.toStringAsFixed(5)}) ✅',
-    );
+    debugPrint('📍 BG Sent: (${pos.latitude.toStringAsFixed(5)}, '
+        '${pos.longitude.toStringAsFixed(5)}) ✅');
   } catch (e) {
-    debugPrint('📍 BG location send error: $e — will retry next minute');
+    debugPrint('📍 BG location error: $e');
+    // Don't rethrow — next minute retry
   }
 }

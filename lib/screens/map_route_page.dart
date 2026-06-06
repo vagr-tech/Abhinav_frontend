@@ -8,33 +8,53 @@ import 'package:intl/intl.dart';
 import '../services/api_service.dart';
 import '../models/user_model.dart';
 import '../services/user_service.dart';
+import '../utils/curve_util.dart';
+import '../widgets/animated_bike_marker.dart';
 
 // ── Live location model ────────────────────────────────────
 class _LiveLocation {
   final String salesmanName;
   final double lat;
   final double lng;
-  final int updatedAt; // epoch seconds
+  final int updatedAt;
+  final List<LatLng> path; // ← NEW
+  final LatLng? prevPoint;
 
   const _LiveLocation({
     required this.salesmanName,
     required this.lat,
     required this.lng,
     required this.updatedAt,
+    required this.path,
+    this.prevPoint,
   });
 
-  factory _LiveLocation.fromJson(Map<String, dynamic> j) => _LiveLocation(
-        salesmanName: j['salesmanName'] ?? '',
-        lat: (j['lat'] as num).toDouble(),
-        lng: (j['lng'] as num).toDouble(),
-        updatedAt: (j['updatedAt'] as num).toInt(),
-      );
+  factory _LiveLocation.fromJson(Map<String, dynamic> j) {
+    final pathList = ((j['path'] as List?) ?? []);
+    final path = pathList
+        .map((p) => LatLng(
+              (p['lat'] as num).toDouble(),
+              (p['lng'] as num).toDouble(),
+            ))
+        .toList();
 
-  /// How many minutes ago was this updated
+    // prevPoint = path-ல second last point (animation from point)
+    final prevPoint = path.length >= 2 ? path[path.length - 2] : null;
+
+    return _LiveLocation(
+      salesmanName: j['salesmanName'] ?? '',
+      lat: (j['lat'] as num).toDouble(),
+      lng: (j['lng'] as num).toDouble(),
+      updatedAt: (j['updatedAtEpoch'] as num).toInt(),
+      path: path,
+      prevPoint: prevPoint, // ← NEW
+    );
+  }
+
   int get minutesAgo =>
       ((DateTime.now().millisecondsSinceEpoch ~/ 1000) - updatedAt) ~/ 60;
 
-  bool get isStale => minutesAgo > 5; // grey out if > 5 mins old
+  bool get isStale => minutesAgo > 5;
 }
 
 class MapRoutePage extends StatefulWidget {
@@ -312,8 +332,6 @@ class _MapRoutePageState extends State<MapRoutePage> {
     if (!_showLive) return [];
 
     final role = widget.user['role'].toString().toLowerCase();
-    // For salesman role: only show their own dot
-    // For manager/master: show all live salesmen
     final liveToShow = role == 'salesman'
         ? _liveLocations.values
             .where((l) =>
@@ -323,45 +341,20 @@ class _MapRoutePageState extends State<MapRoutePage> {
         : _liveLocations.values.toList();
 
     return liveToShow.map((loc) {
-      final isStale = loc.isStale;
-      final dotColor =
-          isStale ? Colors.grey.shade500 : const Color(0xFF00C853); // green
+      final currentPos = LatLng(loc.lat, loc.lng);
+      // prevPoint இல்லாட்டா same position → bike stationary
+      final fromPos = loc.prevPoint ?? currentPos;
 
       return Marker(
-        point: LatLng(loc.lat, loc.lng),
-        width: 56,
-        height: 68,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // Name tag above dot
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-              decoration: BoxDecoration(
-                color: isStale ? Colors.grey.shade700 : const Color(0xFF003300),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Text(
-                loc.salesmanName.split(' ').first, // first name only
-                style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 9,
-                    fontWeight: FontWeight.bold),
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-            const SizedBox(height: 2),
-            // Animated pulsing dot
-            _PulsingDot(color: dotColor, stale: isStale),
-            // "x min ago" label
-            Text(
-              isStale ? '${loc.minutesAgo}m ago' : 'Live',
-              style: TextStyle(
-                  fontSize: 8,
-                  color: isStale ? Colors.grey : const Color(0xFF00C853),
-                  fontWeight: FontWeight.bold),
-            ),
-          ],
+        point: currentPos,
+        width: 60,
+        height: 72,
+        child: AnimatedBikeMarker(
+          key: ValueKey(loc.salesmanName), // ← Important: keyed by name
+          fromPoint: fromPos,
+          toPoint: currentPos,
+          salesmanName: loc.salesmanName,
+          isStale: loc.isStale,
         ),
       );
     }).toList();
@@ -756,14 +749,32 @@ class _MapRoutePageState extends State<MapRoutePage> {
                         "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
                     userAgentPackageName: "com.yourapp.salestracker",
                   ),
-                  // Matched visits polyline
+
+                  // Existing visits polyline
                   if (routePoints.length > 1)
                     PolylineLayer(polylines: [
                       Polyline(
-                          points: routePoints,
-                          strokeWidth: 3.5,
-                          color: const Color(0xFF005BBB)),
+                        points: CurveUtil.smooth(routePoints), // ← CHANGED
+                        strokeWidth: 3.5,
+                        color: const Color(0xFF005BBB),
+                      ),
                     ]),
+
+// ← NEW: Live path polylines (one per salesman)
+                  if (_showLive)
+                    PolylineLayer(
+                      polylines: _liveLocations.values
+                          .where((l) => l.path.length > 1)
+                          .map((l) => Polyline(
+                                points: CurveUtil.smooth(l.path), // ← CHANGED
+                                strokeWidth: 2.5,
+                                color: l.isStale
+                                    ? Colors.grey.shade400
+                                    : const Color(0xFF00C853),
+                                isDotted: false,
+                              ))
+                          .toList(),
+                    ),
                   // All markers: visits + live (live on top)
                   MarkerLayer(
                     markers: [
